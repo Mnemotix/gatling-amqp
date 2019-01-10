@@ -32,5 +32,5 @@ class PublishingSimulation extends Simulation {
       exec(amqp("Publish").publish("gatlingPublishingSimulation", body = Right(body)))
   }
 
-  setUp(scn.inject(rampUsers(3) over (1 seconds))).protocols(amqpProtocol)
+  setUp(scn.inject(rampUsers(3) during (1 seconds))).protocols(amqpProtocol)
 }

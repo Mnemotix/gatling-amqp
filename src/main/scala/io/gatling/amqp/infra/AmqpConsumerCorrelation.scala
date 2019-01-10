@@ -9,8 +9,7 @@ import io.gatling.amqp.config.AmqpProtocol
 import io.gatling.amqp.data.{AsyncConsumerRequest, ConsumeSingleMessageRequest}
 import io.gatling.amqp.event.{AmqpConsumeRequest, AmqpSingleConsumerPerStepRequest}
 import io.gatling.amqp.infra.AmqpConsumer.DeliveredMsg
-import io.gatling.commons.util.ClockSingleton
-import io.gatling.commons.util.ClockSingleton.nowMillis
+import io.gatling.commons.util.DefaultClock
 import io.gatling.core.Predef._
 import io.gatling.core.action.Action
 
@@ -45,6 +44,7 @@ class AmqpConsumerCorrelation(actorName: String,
 
   // TODO use autoAck...
   def consumer(autoAck: Boolean): Consumer = new Consumer {
+    val clock = new DefaultClock()
     override def handleCancel(consumerTag: String): Unit = ???
 
     override def handleRecoverOk(consumerTag: String): Unit = ???
@@ -52,7 +52,7 @@ class AmqpConsumerCorrelation(actorName: String,
     override def handleCancelOk(consumerTag: String): Unit = ???
 
     override def handleDelivery(consumerTag: String, envelope: Envelope, properties: BasicProperties, body: Array[Byte]): Unit = {
-      val deliveredAt = nowMillis
+      val deliveredAt = clock.nowMillis
       val correlationId: String = properties.getCorrelationId
       val deliveredMsg: DeliveredMsg = DeliveredMsg(envelope, properties, body)
       self ! AmqpConsumerCorrelation.ReceivedData(deliveredAt, correlationId, deliveredMsg)
@@ -113,7 +113,7 @@ class AmqpConsumerCorrelation(actorName: String,
 
   override def receive = super.receive.orElse {
     case AmqpConsumerCorrelation.TimeoutCheck =>
-      val now = ClockSingleton.nowMillis
+      val now = clock.nowMillis
       routingMap.foreach {
         case (corrId, req) => {
           val diff = FiniteDuration.apply(now - req.requestTimestamp, TimeUnit.MILLISECONDS)
@@ -166,7 +166,7 @@ class AmqpConsumerCorrelation(actorName: String,
       }
 
     case AmqpSingleConsumerPerStepRequest(req, session, next) =>
-      val requestTimestamp = nowMillis
+      val requestTimestamp = clock.nowMillis
       // TODO implement. <= what implement? It is not finished yet?
       req match {
         case req: AsyncConsumerRequest =>
@@ -183,8 +183,8 @@ class AmqpConsumerCorrelation(actorName: String,
             log.debug(s"Start basicConsume(${req.queueName}) [tag:$tag] for AmqpConsumerCorrelation.")
             tag
           })
-          val actualCorrelationId: String = req.correlationId.get(session).get
-          val reqNameEvaluated: String = req.requestName.apply(session).get
+          val actualCorrelationId: String = req.correlationId.get(session).toOption.get
+          val reqNameEvaluated: String = req.requestName.apply(session).toOption.get
           routingMap.put(actualCorrelationId, AmqpConsumerCorrelation.RequestWithCorrelation(session, next, req.saveResultToSession, requestTimestamp, reqNameEvaluated))
           log.trace("We have marked request for rpc response with correlationId={};next={}.",
             actualCorrelationId.asInstanceOf[AnyRef],
@@ -195,8 +195,8 @@ class AmqpConsumerCorrelation(actorName: String,
 
   override protected def isFinished: Boolean = {
     routingMap.isEmpty && (deliveredCount match {
-      case 0 => (lastRequestedAt + initialTimeout < nowMillis) // wait initial timeout for first publishing
-      case n => (lastDeliveredAt + runningTimeout < nowMillis) // wait running timeout for last publishing
+      case 0 => (lastRequestedAt + initialTimeout < clock.nowMillis) // wait initial timeout for first publishing
+      case n => (lastDeliveredAt + runningTimeout < clock.nowMillis) // wait running timeout for last publishing
     })
   }
 
@@ -218,7 +218,7 @@ class AmqpConsumerCorrelation(actorName: String,
     }
 
     // clean up routingMap and log statsNg for all waiting requests
-    val shutdownTime = nowMillis
+    val shutdownTime = clock.nowMillis
     if (routingMap.nonEmpty) {
       log.warn(s"There are still ${routingMap.size} requests in routingMap. They will be all finished as un-served due shutdown.")
     }

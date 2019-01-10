@@ -1,6 +1,7 @@
 package io.gatling.amqp.config
 
 import akka.actor._
+import io.gatling.commons.util.DefaultClock
 import io.gatling.core.controller.throttle.Throttler
 import io.gatling.core.stats.{DataWritersStatsEngine, StatsEngine}
 
@@ -14,7 +15,7 @@ trait AmqpRunner { this: AmqpProtocol =>
   def run(): Unit = {
     val system = ActorSystem("AmqpRunner")
     try {
-      val statsEngine: StatsEngine = new DataWritersStatsEngine(system, Seq[ActorRef]())
+      val statsEngine: StatsEngine = new DataWritersStatsEngine(Seq[ActorRef](), system, new DefaultClock())
       val throttler  : Throttler   = null  // just use manage Actor
       //warmUp(system, statsEngine, throttler)
     } catch {

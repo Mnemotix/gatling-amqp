@@ -12,20 +12,19 @@ import io.gatling.core.protocol.{Protocol, ProtocolKey}
 import io.gatling.core.stats.StatsEngine
 
 object AmqpProtocol {
-  val AmqpProtocolKey = new ProtocolKey {
+  val AmqpProtocolKey = new ProtocolKey[AmqpProtocol, AmqpComponents] {
 
     type Protocol = AmqpProtocol
     type Components = AmqpComponents
-    def protocolClass: Class[io.gatling.core.protocol.Protocol] = classOf[AmqpProtocol].asInstanceOf[Class[io.gatling.core.protocol.Protocol]]
+    override def protocolClass: Class[io.gatling.core.protocol.Protocol] = classOf[AmqpProtocol].asInstanceOf[Class[io.gatling.core.protocol.Protocol]]
 
-    def defaultProtocolValue(configuration: GatlingConfiguration): AmqpProtocol = AmqpProtocol(configuration)
+    override def defaultProtocolValue(configuration: GatlingConfiguration): AmqpProtocol = AmqpProtocol(configuration)
 
-    def newComponents(system: ActorSystem, coreComponents: CoreComponents): AmqpProtocol => AmqpComponents = {
+    override def newComponents(coreComponents: CoreComponents): AmqpProtocol => AmqpComponents = {
       amqpProtocol => {
         val amqpComponents = AmqpComponents(amqpProtocol)
-        val statsEngine: StatsEngine = coreComponents.statsEngine
-        amqpProtocol.setupVariables(system, statsEngine)
-        amqpProtocol.warmUp(system, statsEngine, coreComponents.throttler)
+        amqpProtocol.setupVariables(coreComponents.actorSystem, coreComponents.statsEngine)
+        amqpProtocol.warmUp(coreComponents.actorSystem, coreComponents.statsEngine, coreComponents.throttler)
         amqpComponents
       }
     }

@@ -4,7 +4,7 @@ import com.rabbitmq.client.AMQP.BasicProperties
 import io.gatling.amqp.data._
 import io.gatling.core.Predef._
 import io.gatling.core.session.Expression
-import io.gatling.commons.util.ClockSingleton
+import io.gatling.commons.util.DefaultClock
 
 import scala.collection.JavaConversions._
 
@@ -36,13 +36,13 @@ trait Publishing {
                       replyToProperty: Option[String] = None,
                       customHeaders: Map[String, AnyRef] = Map.empty,
                       corrId: Expression[String] = session => {
-                        session.userId + "-" + ClockSingleton.nowMillis
+                        session.userId + "-" + (new DefaultClock()).nowMillis
                }): AmqpRequestBuilder = {
     val propExpression: Expression[BasicProperties] = session => {
       val bb = new BasicProperties.Builder() //.headers(Map(keyValue)) // keyValue: (String, String), // import scala.collection.JavaConversions._
       bb.headers(customHeaders)
       replyToProperty.map(bb.replyTo(_))
-      bb.correlationId(corrId.apply(session).get)
+      corrId.apply(session).onSuccess(f => bb.correlationId(f))
       bb.build()
     }
     publish(RpcCallRequest(this.requestName, exchangeName, propExpression, body))

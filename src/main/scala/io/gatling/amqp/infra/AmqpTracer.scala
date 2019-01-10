@@ -18,18 +18,15 @@ case class WriteStat(session: Session, startedAt: Long, stoppedAt: Long, title: 
 class AmqpTracer(statsEngine: StatsEngine)(implicit amqp: AmqpProtocol) extends Actor with Logging {
   override def receive = {
     case WriteStat(session, startedAt, stoppedAt, title, status, code, mes) =>
-      val timings = AmqpTracer.timing(startedAt, stoppedAt, title)
-      statsEngine.logResponse(session, title, timings, status, code, mes)
+      statsEngine.logResponse(session, title, startedAt, stoppedAt, status, code, mes)
 
     case MessageOk(event, stoppedAt, title) =>
       import event._
-      val timings = AmqpTracer.timing(startedAt, stoppedAt, title)
-      statsEngine.logResponse(session, title + "-" + event.req.requestName(session).get, timings, OK, None, None)
+      statsEngine.logResponse(session, title + "-" + event.req.requestName(session).toOption.get, startedAt, stoppedAt, OK, None, None)
 
     case MessageNg(event, stoppedAt, title, message) =>
       import event._
-      val timings = AmqpTracer.timing(startedAt, stoppedAt, title)
-      statsEngine.logResponse(session, title + "-" + event.req.requestName(session).get, timings, KO, None, message)
+      statsEngine.logResponse(session, title + "-" + event.req.requestName(session).toOption.get, startedAt, stoppedAt, KO, None, message)
   }
 }
 

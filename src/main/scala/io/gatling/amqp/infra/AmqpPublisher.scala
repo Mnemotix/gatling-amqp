@@ -9,13 +9,14 @@ import io.gatling.amqp.config._
 import io.gatling.amqp.data._
 import io.gatling.amqp.event._
 import io.gatling.core.session.{Expression, Session}
-import io.gatling.commons.util.ClockSingleton.nowMillis
+import io.gatling.commons.util.DefaultClock
 import io.gatling.core.action.Action
 
 import scala.util._
 
 // next step is called asynchronously from AmqpPublishAction, so this actor cannot change session.
 class AmqpPublisher(actorName: String)(implicit amqp: AmqpProtocol) extends AmqpActor {
+  private val clock = new DefaultClock()
   private val nacker = amqp.nacker
   private val isConfirmMode = amqp.isConfirmMode
   private def sendEvent(event: AmqpEvent): Unit = nacker ! event
@@ -28,11 +29,11 @@ class AmqpPublisher(actorName: String)(implicit amqp: AmqpProtocol) extends Amqp
 
       channel.addConfirmListener(new ConfirmListener() {
         def handleAck (no: Long, multi: Boolean): Unit = {
-          sendEvent(AmqpPublishAcked(actorName, no.toInt, multi, nowMillis))
+          sendEvent(AmqpPublishAcked(actorName, no.toInt, multi, clock.nowMillis))
         }
 
         def handleNack(no: Long, multi: Boolean): Unit =
-          sendEvent(AmqpPublishNacked(actorName, no.toInt, multi, nowMillis))
+          sendEvent(AmqpPublishNacked(actorName, no.toInt, multi, clock.nowMillis))
       })
     }
   }
@@ -54,7 +55,7 @@ class AmqpPublisher(actorName: String)(implicit amqp: AmqpProtocol) extends Amqp
 
   override def receive = {
     case AmqpPublishRequest(req, session, next) =>
-      val propertiesEvaluated: BasicProperties = req.props.apply(session).get
+      val propertiesEvaluated: BasicProperties = req.props.apply(session).toOption.get
       req match {
         case r: RpcCallRequest if next.isDefined => // TODO next HAVE TO BE defined here! move it from AmqpPublishRequest to RpcCallRequest
           saveCorrelationIdInSessionAndResumeNext(r, session, next.get, propertiesEvaluated)
@@ -69,7 +70,7 @@ class AmqpPublisher(actorName: String)(implicit amqp: AmqpProtocol) extends Amqp
 
   def getData(session: Session, bytes: scala.Either[Expression[Array[Byte]], Array[Byte]]): Array[Byte] = {
     bytes match {
-      case Left(l) => l.apply(session).get
+      case Left(l) => l.apply(session).toOption.get
       case Right(r) => session.attributes.foldLeft(new String(r))((a, b) => a.replaceAllLiterally("${" + b._1 + "}", b._2.toString)).getBytes()
     }
   }
@@ -77,18 +78,18 @@ class AmqpPublisher(actorName: String)(implicit amqp: AmqpProtocol) extends Amqp
   protected def publishSync(req: PublishRequest, session: Session, propertiesEvaluated: BasicProperties): Unit = {
     import req._
     val no: Int = getNextPublishSeqNo
-    val event = AmqpPublishing(actorName, no, nowMillis, req, session)
+    val event = AmqpPublishing(actorName, no, clock.nowMillis, req, session)
     Try {
       val data: Array[Byte] = getData(session, bytes)
-      val exchangeStr: String = exchange(session).get
-      val routingKeyStr: String = routingKey(session).get
+      val exchangeStr: String = exchange(session).toOption.get
+      val routingKeyStr: String = routingKey(session).toOption.get
       channel.basicPublish(exchangeStr, routingKeyStr, propertiesEvaluated, data)
       //log.error("message {} published to exchange {}, routing queue {}. (empty exchange with queue in routing key causes publishing directly to queue)", data.toString.blue, exchangeStr.yellow, routingKeyStr.cyan) // import pl.project13.scala.rainbow._
     } match {
       case Success(_) =>
-        sendEvent(AmqpPublished(actorName, no, nowMillis, event))
+        sendEvent(AmqpPublished(actorName, no, clock.nowMillis, event))
       case Failure(e) =>
-        sendEvent(AmqpPublishFailed(actorName, no, nowMillis, e))
+        sendEvent(AmqpPublishFailed(actorName, no, clock.nowMillis, e))
         log.error(s"basicPublish($exchange) failed", e)
     }
   }
@@ -96,16 +97,16 @@ class AmqpPublisher(actorName: String)(implicit amqp: AmqpProtocol) extends Amqp
   protected def publishAsync(req: PublishRequest, session: Session, propertiesEvaluated: BasicProperties): Unit = {
     import req._
     val no: Int = getNextPublishSeqNo
-    sendEvent(AmqpPublishing(actorName, no, nowMillis, req, session))
+    sendEvent(AmqpPublishing(actorName, no, clock.nowMillis, req, session))
     try {
       val data: Array[Byte] = getData(session, bytes)
-      val exchangeStr: String = exchange(session).get
-      val routingKeyStr: String = routingKey(session).get
+      val exchangeStr: String = exchange(session).toOption.get
+      val routingKeyStr: String = routingKey(session).toOption.get
       channel.basicPublish(exchangeStr, routingKeyStr, propertiesEvaluated, data)
       //log.error("message {} published to exchange {}, routing queue {}. (empty exchange with queue in routing key causes publishing directly to queue)", data.toString.blue, exchangeStr.yellow, routingKeyStr.cyan) // import pl.project13.scala.rainbow._
     } catch {
       case e: Exception =>
-        sendEvent(AmqpPublishFailed(actorName, no, nowMillis, e))
+        sendEvent(AmqpPublishFailed(actorName, no, clock.nowMillis, e))
         log.error(s"basicPublish($exchange) failed", e)
     }
   }

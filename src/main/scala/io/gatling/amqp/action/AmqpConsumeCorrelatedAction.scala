@@ -5,6 +5,7 @@ import io.gatling.amqp.config.AmqpProtocol
 import io.gatling.amqp.data.{ConsumeRequest, ConsumeSingleMessageRequest}
 import io.gatling.amqp.event.{AmqpConsumeRequest, AmqpSingleConsumerPerStepRequest}
 import io.gatling.amqp.infra.AmqpConsumerCorrelation
+import io.gatling.commons.util.{Clock, DefaultClock}
 import io.gatling.core.action.{Action, ActorDelegatingAction, ChainableAction, ExitableAction}
 import io.gatling.core.session.Session
 import io.gatling.core.stats.StatsEngine
@@ -20,7 +21,9 @@ class AmqpConsumeCorrelatedAction(req: ConsumeRequest,
 
   class ConsumerActorForCorrelationId(
                                        name: String, val statsEngine: StatsEngine, val next: Action, actor: ActorRef
-                                     ) extends ActorDelegatingAction(name, actor) with ExitableAction
+                                     ) extends ActorDelegatingAction(name, actor) with ExitableAction {
+    override def clock: Clock = new DefaultClock()
+  }
 
   val consumerActorForCorrelationId: ActorRef = {
     // single actor for all users in this scenario step
